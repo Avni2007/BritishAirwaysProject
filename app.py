@@ -1,117 +1,61 @@
 import streamlit as st
 import pandas as pd
+import matplotlib.pyplot as plt
 
+# Load data
+df = pd.read_csv("Final_British_Airways_Analysis.csv")
 
-df = pd.read_csv(
+st.title("British Airways Review Analysis Dashboard")
 
-"Final_British_Airways_Analysis.csv"
+# ==========================
+# METRICS
+# ==========================
 
-)
+st.subheader("Overview")
 
+st.write("Total Reviews:", len(df))
+st.write("Positive Reviews:", len(df[df["Sentiment"] == "Positive"]))
+st.write("Negative Reviews:", len(df[df["Sentiment"] == "Negative"]))
+st.write("Neutral Reviews:", len(df[df["Sentiment"] == "Neutral"]))
 
-st.title(
+# ==========================
+# SENTIMENT GRAPH
+# ==========================
 
-"British Airways AI Customer Satisfaction Dashboard"
+st.subheader("Sentiment Analysis")
 
-)
+sentiment_counts = df["Sentiment"].value_counts()
 
+fig1, ax1 = plt.subplots()
+ax1.bar(sentiment_counts.index, sentiment_counts.values)
+ax1.set_title("Sentiment Distribution")
+st.pyplot(fig1)
 
-st.metric(
+# ==========================
+# TOPIC GRAPH
+# ==========================
 
-"Total Reviews",
+st.subheader("Complaint Topics")
 
-len(df)
+topic_counts = df["Topic"].value_counts()
 
-)
+fig2, ax2 = plt.subplots()
+ax2.bar(topic_counts.index, topic_counts.values)
+ax2.set_title("Topic Distribution")
+plt.xticks(rotation=20)
+st.pyplot(fig2)
 
+# ==========================
+# SAMPLE DATA
+# ==========================
 
-st.metric(
+st.subheader("Sample Data")
+st.dataframe(df.head(10))
 
-"Positive Reviews",
+# ==========================
+# RECOMMENDATIONS
+# ==========================
 
-len(
+st.subheader("Recommendations")
 
-df[
-
-df["Sentiment"]=="Positive"
-
-]
-
-)
-
-)
-
-
-st.metric(
-
-"Negative Reviews",
-
-len(
-
-df[
-
-df["Sentiment"]=="Negative"
-
-]
-
-)
-
-)
-
-
-
-st.subheader(
-
-"Sentiment Distribution"
-
-)
-
-st.bar_chart(
-
-df["Sentiment"].value_counts()
-
-)
-
-
-
-st.subheader(
-
-"Topic Distribution"
-
-)
-
-st.bar_chart(
-
-df["Topic"].value_counts()
-
-)
-
-
-
-st.subheader(
-
-"Recommendations"
-
-)
-
-st.dataframe(
-
-df[
-
-[
-
-"title",
-
-"Sentiment",
-
-"Topic",
-
-"Recommendation",
-
-"CSAT"
-
-]
-
-]
-
-)
+st.dataframe(df[['Topic', 'Recommendation']].drop_duplicates())

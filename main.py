@@ -1,7 +1,32 @@
+# ==========================
+# IMPORTS
+# ==========================
+
 import pandas as pd
+import re
+import nltk
+import matplotlib.pyplot as plt
+
+from nltk.corpus import stopwords
+from nltk.tokenize import word_tokenize
+
 from vaderSentiment.vaderSentiment import SentimentIntensityAnalyzer
+
 from sklearn.model_selection import train_test_split
 from sklearn.ensemble import RandomForestClassifier
+from sklearn.metrics import accuracy_score, classification_report
+
+from sklearn.feature_extraction.text import CountVectorizer
+from sklearn.decomposition import LatentDirichletAllocation
+
+# ==========================
+# DOWNLOAD NLTK RESOURCES
+# ==========================
+
+nltk.download('punkt')
+nltk.download('stopwords')
+
+stop_words = set(stopwords.words('english'))
 
 # ==========================
 # LOAD DATASET
@@ -9,216 +34,159 @@ from sklearn.ensemble import RandomForestClassifier
 
 df = pd.read_csv("british_airways_reviews.csv")
 
-# Remove unwanted column
-df.drop("Unnamed: 0", axis=1, inplace=True)
+if "Unnamed: 0" in df.columns:
+    df.drop("Unnamed: 0", axis=1, inplace=True)
 
-print("Dataset Loaded Successfully\n")
-
+print("Dataset Loaded Successfully")
 print(df.head())
 
+# ==========================
+# NLP PREPROCESSING
+# ==========================
+
+def clean_text(text):
+    text = str(text).lower()
+    text = re.sub(r'[^a-zA-Z\s]', '', text)
+
+    tokens = word_tokenize(text)
+    tokens = [word for word in tokens if word not in stop_words]
+
+    return " ".join(tokens)
+
+df["clean_reviews"] = df["reviews"].apply(clean_text)
 
 # ==========================
-# SENTIMENT ANALYSIS
+# SENTIMENT ANALYSIS (VADER)
 # ==========================
 
 analyzer = SentimentIntensityAnalyzer()
 
+def get_sentiment(text):
+    score = analyzer.polarity_scores(str(text))['compound']
 
-def get_sentiment(review):
-
-    score = analyzer.polarity_scores(str(review))
-
-    compound = score['compound']
-
-    if compound >= 0.05:
-
+    if score >= 0.05:
         return "Positive"
-
-    elif compound <= -0.05:
-
+    elif score <= -0.05:
         return "Negative"
-
     else:
-
         return "Neutral"
 
+df["Sentiment"] = df["clean_reviews"].apply(get_sentiment)
 
-def get_score(review):
+df["Positive"] = df["clean_reviews"].apply(lambda x: analyzer.polarity_scores(x)['pos'])
+df["Negative"] = df["clean_reviews"].apply(lambda x: analyzer.polarity_scores(x)['neg'])
+df["Neutral"] = df["clean_reviews"].apply(lambda x: analyzer.polarity_scores(x)['neu'])
 
-    return analyzer.polarity_scores(str(review))['compound']
-
-
-df["Sentiment"] = df["reviews"].apply(get_sentiment)
-
-df["Score"] = df["reviews"].apply(get_score)
-
-
-print("\nSentiment Count:\n")
-
+print("\nSentiment Counts:")
 print(df["Sentiment"].value_counts())
 
-
 # ==========================
-# TOPIC DETECTION
+# LDA TOPIC MODELING (REQUIRED)
 # ==========================
 
-topics = {
+vectorizer = CountVectorizer(max_df=0.95, min_df=2, stop_words='english')
+dtm = vectorizer.fit_transform(df["clean_reviews"])
 
-    "Flight Delay":
-    ["delay","delayed","late","waiting"],
+lda = LatentDirichletAllocation(n_components=5, random_state=42)
+lda.fit(dtm)
 
-    "Baggage":
-    ["baggage","luggage","bag"],
+topic_results = lda.transform(dtm)
+df["Topic"] = topic_results.argmax(axis=1)
 
-    "Customer Service":
-    ["staff","service","crew","rude"],
-
-    "Seat Comfort":
-    ["seat","legroom","comfort"],
-
-    "Food":
-    ["food","meal","drink"]
-
+# Topic labels
+topic_labels = {
+    0: "Flight Issues",
+    1: "Baggage Problems",
+    2: "Customer Service",
+    3: "Food Quality",
+    4: "Seat Comfort"
 }
 
+df["Topic"] = df["Topic"].map(topic_labels)
 
-def get_topic(review):
-
-    review = str(review).lower()
-
-    for topic, words in topics.items():
-
-        for word in words:
-
-            if word in review:
-
-                return topic
-
-    return "Other"
-
-
-df["Topic"] = df["reviews"].apply(get_topic)
-
-
-print("\nTopic Count:\n")
-
+print("\nTopic Counts:")
 print(df["Topic"].value_counts())
 
-
 # ==========================
-# RECOMMENDATIONS
+# RECOMMENDATION ENGINE
 # ==========================
 
 recommendations = {
-
-    "Flight Delay":
-    "Offer vouchers and improve scheduling",
-
-    "Baggage":
-    "Provide baggage tracking and compensation",
-
-    "Customer Service":
-    "Improve staff training and response time",
-
-    "Seat Comfort":
-    "Upgrade seats and increase legroom",
-
-    "Food":
-    "Improve meal quality and menu options",
-
-    "Other":
-    "Further investigation required"
-
+    "Flight Issues": "Improve scheduling and reduce delays",
+    "Baggage Problems": "Enhance baggage tracking system",
+    "Customer Service": "Train staff for better service",
+    "Food Quality": "Improve in-flight meals",
+    "Seat Comfort": "Upgrade seating comfort"
 }
-
 
 df["Recommendation"] = df["Topic"].map(recommendations)
 
-
-print("\nSample Recommendations:\n")
-
-print(
-
-df[
-
-['Topic',
-
-'Recommendation']
-
-].head(10)
-
-)
-
-
 # ==========================
-# CUSTOMER SATISFACTION PREDICTION
+# CSAT PREDICTION MODEL
 # ==========================
 
 mapping = {
-
-    "Positive":5,
-
-    "Neutral":3,
-
-    "Negative":1
-
+    "Positive": 5,
+    "Neutral": 3,
+    "Negative": 1
 }
-
 
 df["CSAT"] = df["Sentiment"].map(mapping)
 
-
-X = df[["Score"]]
-
+X = df[["Positive", "Negative", "Neutral"]]
 y = df["CSAT"]
 
-
 X_train, X_test, y_train, y_test = train_test_split(
-
-X,
-
-y,
-
-test_size=0.2,
-
-random_state=42
-
+    X, y, test_size=0.2, random_state=42
 )
 
+model = RandomForestClassifier(n_estimators=100, random_state=42)
+model.fit(X_train, y_train)
 
-model = RandomForestClassifier()
+pred = model.predict(X_test)
 
-model.fit(X_train,y_train)
+print("\nModel Accuracy:")
+print(accuracy_score(y_test, pred))
 
-
-accuracy = model.score(
-
-X_test,
-
-y_test
-
-)
-
-
-print("\nPrediction Accuracy:")
-
-print(round(accuracy*100,2),"%")
-
-
+print("\nClassification Report:")
+print(classification_report(y_test, pred))
 
 # ==========================
-# SAVE FINAL FILE
+# VISUALIZATION 1 - SENTIMENT
 # ==========================
 
-df.to_csv(
+sentiment_counts = df["Sentiment"].value_counts()
 
-"Final_British_Airways_Analysis.csv",
+plt.figure()
+plt.bar(sentiment_counts.index, sentiment_counts.values)
+plt.title("Customer Sentiment Analysis")
+plt.xlabel("Sentiment")
+plt.ylabel("Count")
+plt.savefig("sentiment_graph.png")
+plt.show()
 
-index=False
+# ==========================
+# VISUALIZATION 2 - TOPIC
+# ==========================
 
-)
+topic_counts = df["Topic"].value_counts()
 
+plt.figure()
+plt.bar(topic_counts.index, topic_counts.values)
+plt.title("Customer Complaint Topics (LDA)")
+plt.xlabel("Topic")
+plt.ylabel("Count")
+plt.xticks(rotation=20)
+plt.savefig("topic_graph.png")
+plt.show()
 
-print("\nFinal file saved successfully!")
+# ==========================
+# SAVE OUTPUT
+# ==========================
 
-print("File Name: Final_British_Airways_Analysis.csv")
+df.to_csv("Final_BA_Analysis.csv", index=False)
+
+print("\nFiles generated:")
+print("- sentiment_graph.png")
+print("- topic_graph.png")
+print("- Final_BA_Analysis.csv")
